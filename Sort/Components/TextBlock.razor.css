@@ -1,0 +1,15 @@
+﻿
+
+
+
+
+.textblock {
+    display: flex;
+    gap: 12px;
+    flex-grow: 1;
+}
+
+
+::deep .horizontalSelect{
+    width: 150px;
+}

@@ -1,0 +1,16 @@
+﻿
+
+
+.dictionary{
+    display:flex;
+    flex-direction: column;
+}
+
+::deep .mud-icon-button{
+    border-radius: 0px;
+}
+
+
+::deep .List-Item .mud-typography-body1{
+    display: flex;
+}

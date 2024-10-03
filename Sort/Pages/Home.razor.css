@@ -1,0 +1,38 @@
+﻿.xml-output {
+    background-color: #f8f9fa;
+    padding: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: small;
+    font-family: 'Courier New', Courier, monospace;
+    white-space: pre-wrap; /* Ensures long lines wrap */
+    overflow-x: auto; /* Adds horizontal scroll if needed */
+    width: 50%;
+}
+
+::deep .mud-treeview{
+    width: 95%;
+}
+
+
+::deep .mud-treeview-item-content {
+    /*border: 2px solid #ddd;*/
+    margin: 4px 0px;
+}
+
+
+::deep .mud-paper{
+    padding: 4px;
+    width: 100%;
+}
+
+::deep div.pair{
+    padding: 4px 6px;
+}
+
+
+
+::deep .mud-input-adornment p{
+    padding: 2px;
+    border: 2px solid black;
+}

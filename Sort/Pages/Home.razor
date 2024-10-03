@@ -1,0 +1,650 @@
+﻿@page "/"
+@using MudBlazor
+@using Sort.Components
+@using Sort.Shared
+@using System.Xml.Linq
+@using System.Reflection
+@using System.Xml
+@inject IJSRuntime JS
+<PageTitle>Home</PageTitle>
+
+<button @onclick="UpdateXMLTree">Update XML</button>
+
+<section style="display: flex; width: 100%;">
+<MudTreeView @ref="TreeRoot" Hover Ripple="false" Items="TreeItems" T="ElementDetails" SelectionMode="SelectionMode.SingleSelection" @bind-SelectedValue="SelectedItem">
+    <ItemTemplate Context="TItemContext">
+            <MudTreeViewItem  tabindex="0" @onkeydown="@((e)=> HandleKey(e, TItemContext))" ondragover="event.preventDefault()" Expanded="true" Items="@TItemContext.Children" Value="@TItemContext.Value" Text="@TItemContext.Text">
+            <BodyContent Context="BodyItem">
+                    <MudPaper id="@TItemContext.Value?.Id" @oncustomdrop="@HandleCustomOnDrop" Class="node">
+                    @if (BodyItem.Value.ComponentType != null)
+                    {
+                        <h5 class="node-title" ondragover="event.stopPropagation();">@BodyItem.Value.InnerText</h5>
+                        <DynamicComponent @ref="BodyItem.Value.Instance" Type="@BodyItem.Value.ComponentType"
+                                          Parameters="@BodyItem.Value.Parameters" />
+                    }
+                    else
+                    {
+                        <h5 class="node-title" ondrop="event.preventDefault()">@BodyItem.Text</h5>
+                    }
+                </MudPaper>
+            </BodyContent>    
+        </MudTreeViewItem>
+    </ItemTemplate>
+</MudTreeView>
+    @if (XMLList is not null)
+    {
+        <h1 class="xml-output">@XMLList</h1>
+    }
+</section>
+
+
+
+
+@code
+{
+    private ElementDetails ElementInfo { get; set; }
+    private MudTreeView<ElementDetails> TreeRoot;
+    private List<MudTreeView<ElementDetails>> items = new();
+    public List<TreeItemData<ElementDetails>> TreeItems { get; set; } = new();
+    private string XMLList;
+    private ElementDetails SelectedItem;
+    private List<string> ImmutableNodes = new List<string>()
+    {
+        "Receipt",
+        "Body",
+        "DataContext",
+        "Resources"
+    };
+
+    private List<string> AtomicNodes = new List<string>() //Atomic nodes cannot have children
+    {
+        "Dictionary",
+        "Row",
+        "TextBlock",
+        "Run",
+    };
+
+    private readonly Dictionary<string, Type> ComponentMappings = new Dictionary<string, Type>
+    {
+        // { "Receipt", typeof(ReceiptComponent) },
+        // { "DataContext", typeof(DataContextComponent) },
+        { "Dictionary", typeof(Dictionary) },
+        { "Pair", typeof(Pair) },
+        // { "Resources", typeof(ResourcesComponent) },
+        { "DataSource", typeof(DataSource) },
+        { "Body", typeof(Body) },
+        { "Row", typeof(Row) },
+        // { "Border", typeof(BorderComponent) },
+        // { "Image", typeof(ImageComponent) },
+        { "TextBlock", typeof(TextBlock) },
+        { "Repeater", typeof(Repeater) },
+        { "Run", typeof(Run) }
+    };
+
+
+    // Prepare the parameters for the dynamic component
+    private Dictionary<string, object> GetComponentParameters(ElementDetails src)
+    {
+
+        var result = src.Id switch
+        {
+            "Pair" => GetParameterProperties(typeof(Pair)),
+            "Dictionary" => GetParameterProperties(typeof(Dictionary)),
+            "Row" => GetParameterProperties(typeof(Row)),
+            "DataSource" => GetParameterProperties(typeof(DataSource)),
+            "Body" => GetParameterProperties(typeof(Body)),
+            "TextBlock" => GetParameterProperties(typeof(TextBlock)),
+            "Repeater" => GetParameterProperties(typeof(Repeater)),
+            "Run" => GetParameterProperties(typeof(Run)),
+            _ => new Dictionary<string, object>()
+        };
+
+        return result;
+    }
+
+    protected override void OnInitialized()
+    {
+        items.Add(TreeRoot);
+        TreeItems.Add(new TreeItemData<ElementDetails>()
+        {
+            Text = "Receipt",
+            Value = new ElementDetails() { Id = Guid.NewGuid().ToString(), Immutable = true },
+            Children = [
+                new TreeItemData<ElementDetails>() { Text = "DataContext", Value = new ElementDetails() { Id = Guid.NewGuid().ToString(), Immutable = true, },
+                    Children = [
+                        new TreeItemData<ElementDetails>(){ Text = "Dictionary", Value = new ElementDetails() {Id = Guid.NewGuid().ToString(), InnerText="Static Dictionary", Immutable = true, }}
+                    ]
+                },
+                new TreeItemData<ElementDetails>() { Text = "Resources", Value = new ElementDetails() { Id = Guid.NewGuid().ToString(), Immutable = true, } },
+                new TreeItemData<ElementDetails>() { Text = "Body", Value = new ElementDetails() { Id = Guid.NewGuid().ToString(), Immutable = true, InnerText="Body", ComponentType = typeof(Body), Parameters = new Dictionary<string, object>(){ {"Width", null}, {"Background",null} } } },
+            ]
+        });
+    }
+
+    private async Task HandleKey(KeyboardEventArgs e, TreeItemData<ElementDetails> item)
+    {
+        if(e.Code == "Delete" && item.Value.Immutable is false)
+        {
+            var result = RemoveNodeById(TreeItems[0], SelectedItem.Id, ImmutableNodes);
+            if (result)
+            {
+                UpdateXMLTree();                
+            }
+        }
+    }
+
+    private async Task HandleCustomDragStart(CustomOnDragStart eventArgs)
+    {
+        var ElementId = eventArgs.Id;
+        ElementInfo = await JS.InvokeAsync<ElementDetails>("getElementById", ElementId);
+    }
+
+    private async Task HandleCustomOnDrop(CustomOnDrop eventArgs)
+    {
+        var src = await JS.InvokeAsync<ElementDetails>("getElementById", eventArgs.srcId);
+        var target = await JS.InvokeAsync<ElementDetails>("getElementById", eventArgs.targetId);
+        ElementInfo = await JS.InvokeAsync<ElementDetails>("getElementById", target.Id);
+        var node = FindNodeById(TreeItems[0], ElementInfo.Id);
+        if (node is null)
+            return;
+
+        switch (node.Value.InnerText, src.InnerText) //This makes it so you can't place x component in y node
+        {
+            case ("Static Dictionary", "Dictionary"):
+            case ("Dictionary", "Dictionary"):
+            case ("TextBlock", "TextBlock"):
+                return;
+            default:
+                break;
+        }
+
+        Type componentType = GetComponentType(src);
+        Dictionary<string, object> parameters = GetComponentParameters(src);
+        if (node.HasChildren)
+        {
+            node.Children.Add(new TreeItemData<ElementDetails>()
+                {
+                    Text = src.Id,
+                    Value = new ElementDetails()
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        InnerText = src.InnerText,
+                        ComponentType = componentType,
+                        Parameters = parameters
+                    }
+                });
+        }
+        else
+        {
+            node.Children = new List<TreeItemData<ElementDetails>>
+            {
+                new TreeItemData<ElementDetails>()
+                {
+                    Text = src.Id,
+                    Value = new ElementDetails()
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        InnerText = src.InnerText,
+                        ComponentType = componentType,
+                        Parameters = parameters
+                    }
+                }
+            };
+        }
+
+        UpdateXMLTree();
+    }
+
+    private void UpdateXMLTree()
+    {
+        TreeToXmlConverter converter = new TreeToXmlConverter(AtomicNodes);
+        XMLList = converter.ConvertToXml(TreeItems[0]);
+    }
+
+    public TreeItemData<ElementDetails> FindNodeById(TreeItemData<ElementDetails> currentNode, string id)
+    {
+        if (currentNode == null)
+            return null;
+
+        if (currentNode.Value is not null && currentNode.Value?.Id == id)
+            return currentNode;
+
+        foreach (var child in currentNode.Children ?? new List<TreeItemData<ElementDetails>>())
+        {
+            var result = FindNodeById(child, id);
+            if (result != null)
+                return result;
+        }
+
+        return null;
+    }
+
+    public bool RemoveNodeById(TreeItemData<ElementDetails> currentNode, string id, List<string> immutableNodes)
+    {
+        if (currentNode == null)
+            return false;
+
+        if (currentNode.Children == null)
+            return false;
+
+        // Iterate through the children in reverse to safely remove items while iterating
+        for (int i = currentNode.Children.Count - 1; i >= 0; i--)
+        {
+            var child = currentNode.Children[i];
+            if (child?.Value?.Id == id)
+            {
+                if (immutableNodes.Contains(child.Text))
+                {
+                    return false;
+                }
+                // Remove the child and all its descendants
+                currentNode.Children.RemoveAt(i);
+                return true; // Assuming IDs are unique, exit after removal
+            }
+            else
+            {
+                // Recursively attempt to remove from the child's subtree
+                bool removed = RemoveNodeById(child, id, immutableNodes);
+                if (removed)
+                    return true;
+            }
+        }
+
+        return false; // Node with the specified ID was not found in this subtree
+    }
+
+    public class TreeToXmlConverter
+    {
+        private TreeItemData<ElementDetails> rootNode;
+        private List<string> AtomicNodes;
+        public TreeToXmlConverter(List<string> atomicNodes)
+        {
+            AtomicNodes = atomicNodes;
+        }
+        /// <summary>
+        /// Converts a TreeNode structure to an XML string using post-order traversal.
+        /// </summary>
+        /// <param name="root">The root node of the tree.</param>
+        /// <returns>XML string representing the tree.</returns>
+        public string ConvertToXml(TreeItemData<ElementDetails> root)
+        {
+            rootNode = root;
+            if (root == null)
+                throw new ArgumentNullException(nameof(root));
+
+            XElement xml = BuildXmlElement(root);
+            return xml.ToString();
+        }
+
+        /// <summary>
+        /// Recursively builds an XElement from a TreeNode using post-order traversal.
+        /// </summary>
+        /// <param name="node">The current TreeNode.</param>
+        /// <returns>XElement representing the current node and its children.</returns>
+        /// <summary>
+        /// Recursively builds an XElement from a TreeItemData node using post-order traversal.
+        /// </summary>
+        /// <param name="node">The current TreeItemData node.</param>
+        /// <returns>XElement representing the current node and its children.</returns>
+        private XElement BuildXmlElement(TreeItemData<ElementDetails> node)
+        {
+
+            if (node.Value == null)
+                throw new ArgumentNullException(nameof(node.Value), "Node data cannot be null.");
+
+            // Determine the tag name for the XML element
+            string tagName = !string.IsNullOrWhiteSpace(node.Text) ? node.Text : "Element";
+            XElement element = new XElement(tagName);
+
+            // Add attributes from Parameters dictionary
+            AddParametersAsAttributes(element, node.Value);
+
+            // Recursively add child elements
+            if (node.Children != null && node.Children.Any())
+            {
+                foreach (var child in node.Children)
+                {
+                    XElement childElement = BuildXmlElement(child);
+                    element.Add(childElement);
+                }
+            }
+            else if (node.Children is null || node.Children.Any() is false)
+            {
+                // If there are no children and no inner content, add an empty text node to prevent self-closing tag
+                if (AtomicNodes.Contains(node.Value.InnerText)) //Make tag self closing with no children
+                {
+                    //self close tag
+                }
+                else
+                {
+                    //Add empty element so a closing tag is made
+                    element.Add(new XText(string.Empty));
+                }
+            }
+
+            return element;
+        }
+
+        /// <summary>
+        /// Adds attributes to the XML element based on the Parameters dictionary.
+        /// </summary>
+        /// <param name="element">The XML element to which attributes are added.</param>
+        /// <param name="parameters">The dictionary of parameters to be added as attributes.</param>
+        private void AddParametersAsAttributes(XElement element, ElementDetails model)
+        {
+            if (model == null)
+                return;
+
+            var node = FindNodeById(rootNode, model.Id);
+            if (node?.Value?.Instance is not DynamicComponent component)
+                return;
+
+            var parameters = component.Parameters
+                .Where(p => !IsEventCallback(p.Value))
+                .ToDictionary(p => p.Key, p => p.Value);
+
+            if (component.Instance == null || parameters == null || parameters.Count == 0)
+                return;
+
+            switch (component.Instance)
+            {
+                case Pair pairComponent:
+                    GetParametersForPair(parameters, component.Instance, element);
+                    break;
+                case Dictionary dictionaryComponent:
+                    GetParametersForDictionary(parameters, component.Instance as Dictionary, element);
+                    break;
+                case Row rowComponent:
+                    GetParametersForRow(parameters, component.Instance as Row, element);
+                    break;
+                case DataSource dataSourceComponent:
+                    GetParametersForDataSource(parameters, component.Instance as DataSource, element);
+                    break;
+                case Body bodyComponent:
+                    GetParametersForDataSource(parameters, component.Instance as Body, element);
+                    break;
+                case TextBlock textBlockComponent:
+                    GetParametersForTextBlock(parameters, component.Instance as TextBlock, element);
+                    break;
+                case Repeater repeaterComponent:
+                    GetParametersForRepeater(parameters, component.Instance as Repeater, element);
+                    break;
+                case Run runComponent:
+                    GetParametersForRun(parameters, component.Instance as Run, element);
+                    break;
+                default:
+                    return;
+            }
+        }
+
+        void GetParametersForRun(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForRepeater(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForTextBlock(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForBody(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForDataSource(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForRow(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+            }
+        }
+
+        void GetParametersForPair(IDictionary<string, object> parameters, object componentInstance, XElement element)
+        {
+            foreach (var param in parameters)
+            {
+                if (string.IsNullOrEmpty(param.Key))
+                    continue;
+                // Convert the key to a valid XML attribute name
+                string attributeName = XmlConvert.EncodeName(param.Key);
+
+                var parameterProperty = componentInstance.GetType().GetProperty(param.Key);
+                if (parameterProperty == null)
+                    continue; // Skip if the property does not exist
+
+                var result = parameterProperty.GetValue(componentInstance);
+
+                // Add the attribute with its value
+                if (result is null)
+                    continue;
+                element.SetAttributeValue(attributeName, result?.ToString() ?? "");
+
+            }
+        }
+
+        void GetParametersForDictionary(IDictionary<string, object> parameters, Dictionary componentInstance, XElement element)
+        {
+            foreach (var pair in componentInstance.Pairs)
+            {
+                if (string.IsNullOrEmpty(pair.Key))
+                    continue;
+                string attributeName = XmlConvert.EncodeName(pair.Key);
+
+                if (string.IsNullOrEmpty(pair.Value))
+                    continue;
+                element.SetAttributeValue(attributeName, pair.Value);
+            }
+        }
+
+        private bool IsEventCallback(object parameterValue)
+        {
+            if (parameterValue == null)
+                return false;
+
+            var parameterType = parameterValue.GetType();
+
+            // Check if the property type is EventCallback or EventCallback<T>
+            return parameterType == typeof(EventCallback) ||
+                (parameterType.IsGenericType && parameterType.GetGenericTypeDefinition() == typeof(EventCallback<>));
+        }
+
+        private TreeItemData<ElementDetails> FindNodeById(TreeItemData<ElementDetails> currentNode, string id)
+        {
+            if (currentNode == null)
+                return null;
+
+            if (currentNode.Value is not null && currentNode.Value?.Id == id)
+                return currentNode;
+
+            foreach (var child in currentNode.Children ?? new List<TreeItemData<ElementDetails>>())
+            {
+                var result = FindNodeById(child, id);
+                if (result != null)
+                    return result;
+            }
+
+            return null;
+        }
+    }
+
+    private TreeItemData<ElementDetails> FindParentNodeById(TreeItemData<ElementDetails> currentNode, string id)
+    {
+        if (currentNode == null || currentNode.Children == null)
+            return null;
+
+        // Check if any of the current node's children has the target ID
+        foreach (var child in currentNode.Children)
+        {
+            if (child.Value != null && child.Value.Id == id)
+            {
+                return currentNode; // Return the current node as it is the parent of the matching child
+            }
+
+            // Recursively search in the child node
+            var parent = FindParentNodeById(child, id);
+            if (parent != null)
+            {
+                return parent; // Return the parent if found in the recursion
+            }
+        }
+
+        return null; // Return null if no matching node is found
+    }
+
+    private Type GetComponentType(ElementDetails src)
+    {
+        if(ComponentMappings.TryGetValue(src.Id, out Type comp))
+        {
+            return comp;
+        }
+
+        return null;
+    }
+
+    public static Dictionary<string, object> GetParameterProperties(Type componentType)
+    {
+        // Create an instance of the component to access default values
+        var componentInstance = Activator.CreateInstance(componentType);
+
+        // Get all properties of the component type
+        var properties = componentType.GetProperties();
+        Dictionary<string, object> parameters = new Dictionary<string, object>();
+
+        // Filter properties with the [Parameter] attribute
+        var parameterProperties = properties
+            .Where(prop => Attribute.IsDefined(prop, typeof(ParameterAttribute)))
+            .ToArray();
+
+        foreach (var property in parameterProperties)
+        {
+            var defaultValue = property.GetValue(componentInstance);
+            parameters.Add(property.Name, defaultValue);
+        }
+
+        return parameters;
+    }
+
+    public class ElementDetails
+    {
+        public string Id { get; set; }
+        public bool Immutable { get; set; } = false;
+        public string TagName { get; set; }
+        public string InnerText { get; set; }
+        public string InnerHTML { get; set; }
+        public string OuterHTML { get; set; }
+        public string[] Classes { get; set; }
+        public Type ComponentType { get; set; }
+        public Dictionary<string, object> Parameters { get; set; }
+        public object? Instance { get; set; }
+    }
+}

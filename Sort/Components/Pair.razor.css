@@ -1,0 +1,5 @@
+﻿.pair {
+    display: flex;
+    gap: 12px;
+    flex-grow: 1;
+}

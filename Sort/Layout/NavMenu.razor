@@ -1,0 +1,67 @@
+﻿@using Sort.Shared
+@inject IJSRuntime JS
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Sort</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+        @foreach (var context in Nodes)
+        {
+            <div id="@context" draggable="true" @oncustomdragstart="HandleDragStart" @ondragend="@(() => {draggingStyle = "";})" class="@($"node {draggingStyle}")">
+                <div class="node-title collapsed">
+                    <b>@context</b>
+                    <button @onclick="@ShowInfoModal">
+                        <i class="bi bi-info-circle"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    </nav>
+</div>
+
+
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    private string? draggingStyle = "";
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    void HandleDragStart()
+    {
+        draggingStyle = "dragging";
+    }
+
+    public List<string> Nodes = new List<string>()
+    {
+        // "Receipt",
+        // "DataContext",
+        "Dictionary",
+        "Pair",
+        // "Resources",
+        "DataSource",
+        // "Body",
+        "Row",
+        // "Border",
+        // "Image",
+        "TextBlock",
+        "Repeater",
+        "Run"
+    };
+
+    void ShowInfoModal()
+    {
+        
+    }
+}

@@ -1,0 +1,19 @@
+﻿
+
+
+
+
+<div class="dictionary" ondragover="event.stopPropagation();">
+    <MudIconButton Icon="@Icons.Material.Filled.Add" OnClick="AddItem" Class="w-25"/>
+    <MudList T="Pair">
+        <ChildContent>
+            @foreach(var item in Pairs)
+            {
+                <MudListItem Class="List-Item" Ripple="false">
+                    <Pair @bind-Key="@item.Key" @bind-Value="@item.Value"/>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="@(() => HandleRemoveItem(item))"/>
+                </MudListItem>
+            }
+        </ChildContent>
+    </MudList>
+</div>

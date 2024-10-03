@@ -1,0 +1,14 @@
+﻿@using Shared
+
+<div class="textblock">
+    <MudTextField Label="FontSize" T="string" Value="FontSize" ValueChanged="OnFontSizeChanged" />
+    <MudTextField Label="Width" T="string" Value="Width" ValueChanged="OnWidthChanged" />
+    <MudSelect Class="horizontalSelect" T="Enums.HorizontalAlignmentValues" Label="HorizontalAlignment" Value="HorizontalAlignment" ValueChanged="OnHorizontalAlignmentChanged">
+        @foreach (Enums.HorizontalAlignmentValues item in Enum.GetValues(typeof(Enums.HorizontalAlignmentValues)))
+        {
+            <MudSelectItem T="Enums.HorizontalAlignmentValues" Value="@item">@item</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField Label="Content" T="string" Value="Content" ValueChanged="OnContentChanged" />
+    <MudTextField Label="FontWeight" T="string" Value="FontWeight" ValueChanged="OnFontWeightChanged" />
+</div>
