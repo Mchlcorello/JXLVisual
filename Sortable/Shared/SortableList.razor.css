@@ -1,0 +1,18 @@
+﻿/* 
+  you need the ::deep identifier if you are using scoped styles like this
+  because scoped styles are only applied to markup in the component, not
+  to the markup inside the render fragment.
+*/
+
+::deep .sortable-ghost {
+    visibility: visible;
+}
+
+::deep .sortable-fallback {
+    opacity: 1 !important
+}
+
+::deep .list-group-item {
+    user-select: none;
+    cursor: move;
+}

@@ -1,0 +1,22 @@
+﻿@page "/"
+
+@inject IJSRuntime JS
+
+<PageTitle>Home</PageTitle>
+
+<h1>Hello, world!</h1>
+
+<ul id="root" class="nested-sortable">
+
+</ul>
+
+@code{
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("createNestedSortable");
+        }
+    }
+}
